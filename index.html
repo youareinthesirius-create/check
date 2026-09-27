@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CHECK</title>
+<style>
+:root{
+  --bg:#070c14; --panel:#0b1420cc; --cyan:#5fd8ff; --cyan-dim:#2a6b84;
+  --amber:#ffd35c; --text:#dff4ff;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);
+  font-family:'Segoe UI',system-ui,-apple-system,sans-serif;overflow:hidden;}
+body{background:radial-gradient(circle at 50% 45%, #0d1b2a 0%, #070c14 60%, #04070c 100%);
+  display:flex;flex-direction:column;align-items:center;}
+#core{position:relative;width:min(60vh,420px);height:min(60vh,420px);margin-top:2vh;flex-shrink:0;}
+#core svg{width:100%;height:100%;overflow:visible;}
+.ring{fill:none;stroke:var(--cyan);opacity:.85;filter:drop-shadow(0 0 6px var(--cyan));}
+.ring-dim{stroke:var(--cyan-dim);opacity:.5;}
+.ring-amber{stroke:var(--amber);filter:drop-shadow(0 0 6px var(--amber));}
+.ticks line{stroke:#8fd9ff;stroke-width:1;opacity:.6;}
+#coreSpin{transform-origin:50% 50%;animation:spin 14s linear infinite;}
+#coreSpinRev{transform-origin:50% 50%;animation:spin 22s linear infinite reverse;}
+@keyframes spin{to{transform:rotate(360deg);}}
+#pulse{fill:var(--cyan);opacity:.15;transform-origin:50% 50%;animation:pulse 2.4s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:.08;r:70px;}50%{opacity:.22;r:90px;}}
+#status{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;
+  font-size:12px;letter-spacing:3px;color:var(--cyan);text-transform:uppercase;pointer-events:none;}
+#status .big{display:block;font-size:15px;letter-spacing:2px;color:#fff;margin-top:4px;
+  text-shadow:0 0 8px var(--cyan);min-height:18px;}
+#log{width:min(700px,92vw);flex:1;overflow-y:auto;padding:10px 6px 6px;display:flex;flex-direction:column;gap:10px;}
+.msg{max-width:88%;padding:10px 14px;border-radius:10px;line-height:1.5;font-size:14.5px;
+  border:1px solid var(--cyan-dim);background:var(--panel);backdrop-filter:blur(4px);white-space:pre-wrap;}
+.msg.user{align-self:flex-end;border-color:#4b7d95;background:#12233699;}
+.msg.ai{align-self:flex-start;color:var(--cyan);border-color:#2a6b8477;}
+#voiceHint{width:min(700px,92vw);text-align:center;font-size:11px;color:var(--cyan-dim);
+  letter-spacing:1px;height:14px;margin-top:-4px;}
+#inputBar{width:min(700px,92vw);display:flex;gap:8px;padding:10px 0 14px;flex-shrink:0;}
+#inputBar input{flex:1;background:#0c1826;border:1px solid var(--cyan-dim);border-radius:8px;
+  color:var(--text);padding:12px 14px;font-size:14.5px;outline:none;}
+#inputBar input:focus{border-color:var(--cyan);}
+#inputBar button{background:linear-gradient(180deg,#2a6b84,#123244);color:#fff;border:1px solid var(--cyan);
+  border-radius:8px;padding:0 20px;font-size:14px;letter-spacing:1px;cursor:pointer;}
+#inputBar button:active{transform:scale(.97);}
+#inputBar button:disabled{opacity:.4;cursor:default;}
+#micBtn{background:linear-gradient(180deg,#1a2d3d,#0c1826);width:48px;padding:0;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:18px;}
+#micBtn.listening{background:linear-gradient(180deg,#ffd35c,#b8860b);border-color:var(--amber);
+  animation:micPulse 1.1s ease-in-out infinite;}
+@keyframes micPulse{0%,100%{box-shadow:0 0 0 0 #ffd35c66;}50%{box-shadow:0 0 0 8px #ffd35c00;}}
+#log::-webkit-scrollbar{width:6px;}
+#log::-webkit-scrollbar-thumb{background:var(--cyan-dim);border-radius:3px;}
+</style>
+</head>
+<body>
+
+<div id="core">
+  <svg viewBox="0 0 300 300">
+    <circle id="pulse" cx="150" cy="150" r="70"></circle>
+    <g id="coreSpin">
+      <circle class="ring" cx="150" cy="150" r="140" stroke-width="3"></circle>
+      <g class="ticks"></g>
+    </g>
+    <g id="coreSpinRev">
+      <circle class="ring ring-dim" cx="150" cy="150" r="105" stroke-width="14" stroke-dasharray="3 6"></circle>
+      <circle id="ampBand" class="ring ring-amber" cx="150" cy="150" r="105" stroke-width="14"
+        stroke-dasharray="0 660" stroke-linecap="round" transform="rotate(-90 150 150)"></circle>
+    </g>
+    <circle class="ring" cx="150" cy="150" r="70" stroke-width="2.5"></circle>
+  </svg>
+  <div id="status">CHECK<span class="big" id="statusText">대기중</span></div>
+</div>
+
+<div id="log"></div>
+<div id="voiceHint"></div>
+<div id="inputBar">
+  <button id="micBtn" title="음성으로 말하기">🎤</button>
+  <input id="msgInput" type="text" placeholder="CHECK에게 말을 걸어보세요..." autocomplete="off">
+  <button id="sendBtn">전송</button>
+</div>
+
+<script>
+/* ============================================================
+   ⚠️ 여기에 본인의 Gemini API 키를 넣으세요.
+   발급: https://aistudio.google.com/apikey (무료)
+   주의: 이 키는 페이지 소스에 그대로 노출됩니다.
+   반드시 Google AI Studio에서 "애플리케이션 제한(HTTP 리퍼러)"을
+   본인의 GitHub Pages 도메인으로 걸어서 다른 사이트에서 도용 못 하게 막으세요.
+   ============================================================ */
+const GEMINI_API_KEY = "여기에_본인_API_키_붙여넣기";
+const GEMINI_MODEL = "gemini-2.0-flash"; // 필요시 ai.google.dev에서 최신 모델명 확인 후 교체
+
+// --- 외곽 눈금 ---
+(function(){
+  const g = document.querySelector('#coreSpin .ticks');
+  for(let i=0;i<48;i++){
+    const a = (i/48)*Math.PI*2;
+    const r1=128, r2= i%4===0 ? 118 : 122;
+    const x1=150+r1*Math.cos(a), y1=150+r1*Math.sin(a);
+    const x2=150+r2*Math.cos(a), y2=150+r2*Math.sin(a);
+    const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',x1);line.setAttribute('y1',y1);
+    line.setAttribute('x2',x2);line.setAttribute('y2',y2);
+    g.appendChild(line);
+  }
+})();
+
+const statusText = document.getElementById('statusText');
+const log = document.getElementById('log');
+const input = document.getElementById('msgInput');
+const sendBtn = document.getElementById('sendBtn');
+const ampBand = document.getElementById('ampBand');
+
+let history = []; // {role:'user'|'model', content}
+
+function setStatus(t){ statusText.textContent = t; }
+function setActivity(level){ ampBand.setAttribute('stroke-dasharray', (660*level) + ' 660'); }
+function addMsg(role, text){
+  const div = document.createElement('div');
+  div.className = 'msg ' + (role==='user'?'user':'ai');
+  div.textContent = text;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  return div;
+}
+
+const SYSTEM_PROMPT = `너는 사용자의 개인 AI 비서 'CHECK'다. 아이언맨 토니 스타크의 자비스에서 영감을 받은 캐릭터로,
+차분하고 지적이며 약간의 위트가 있는 말투로, 항상 간결하고 실용적인 조언과 정보를 제공한다.
+사용자가 업무, 일상, 고민, 잡담 등 무엇을 이야기하든 좋은 말동무이자 조력자가 되어준다.
+과도하게 격식체("~하십시오")를 쓰기보다는 "~습니다/~죠/~네요" 정도의 신뢰감 있는 존댓말을 쓴다.
+답변은 보통 2~5문장 정도로 간결하게 한다.`;
+
+async function callGemini(){
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+  const body = {
+    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    contents: history.map(h => ({ role: h.role, parts: [{ text: h.content }] }))
+  };
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if(!res.ok){
+    const err = await res.text();
+    throw new Error('API 오류 (' + res.status + '): ' + err.slice(0,200));
+  }
+  const data = await res.json();
+  const text = data?.candidates?.[0]?.content?.parts?.map(p=>p.text).join('') || '(응답을 받지 못했습니다)';
+  return text;
+}
+
+function init(){
+  if(!GEMINI_API_KEY || GEMINI_API_KEY.includes('여기에')){
+    setStatus('키 미설정');
+    addMsg('ai', '코드 상단의 GEMINI_API_KEY에 본인의 API 키를 먼저 넣어주세요.');
+    return;
+  }
+  setStatus('온라인');
+  addMsg('ai', '안녕하세요. CHECK입니다. 무엇을 도와드릴까요?');
+}
+
+async function send(){
+  const text = input.value.trim();
+  if(!text) return;
+  input.value = '';
+  sendBtn.disabled = true;
+  addMsg('user', text);
+  history.push({ role:'user', content:text });
+
+  const aiDiv = addMsg('ai', '...');
+  setStatus('분석중');
+  setActivity(0.35);
+
+  try{
+    const reply = await callGemini();
+    aiDiv.textContent = reply;
+    history.push({ role:'model', content: reply });
+    setStatus('온라인');
+    setActivity(0.08);
+  }catch(e){
+    aiDiv.textContent = '죄송합니다, 응답 중 문제가 발생했습니다. (' + e.message + ')';
+    setStatus('오류');
+    setActivity(0);
+  }finally{
+    sendBtn.disabled = false;
+    input.focus();
+  }
+}
+
+sendBtn.addEventListener('click', send);
+input.addEventListener('keydown', e=>{ if(e.key==='Enter') send(); });
+
+// --- 음성 인식 ---
+const micBtn = document.getElementById('micBtn');
+const voiceHint = document.getElementById('voiceHint');
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognizer = null, listening = false;
+
+if(!SpeechRec){
+  micBtn.disabled = true; micBtn.style.opacity = '.3';
+  voiceHint.textContent = '이 브라우저는 음성 인식을 지원하지 않아요 (크롬 권장)';
+}else{
+  recognizer = new SpeechRec();
+  recognizer.lang = 'ko-KR';
+  recognizer.interimResults = true;
+  recognizer.continuous = false;
+
+  recognizer.onstart = ()=>{ listening=true; micBtn.classList.add('listening'); voiceHint.textContent='듣고 있습니다...'; setStatus('청취중'); };
+  recognizer.onresult = (e)=>{
+    let finalText='', interim='';
+    for(let i=0;i<e.results.length;i++){
+      const t = e.results[i][0].transcript;
+      if(e.results[i].isFinal) finalText += t; else interim += t;
+    }
+    input.value = finalText || interim;
+    if(finalText) voiceHint.textContent = '"' + finalText + '"';
+  };
+  recognizer.onerror = (e)=>{ voiceHint.textContent = e.error==='not-allowed' ? '마이크 권한을 허용해주세요' : '음성 인식 중 문제가 발생했어요'; };
+  recognizer.onend = ()=>{
+    listening=false; micBtn.classList.remove('listening'); setStatus('온라인');
+    if(input.value.trim()){ setTimeout(()=>{ voiceHint.textContent=''; send(); }, 150); }
+  };
+  micBtn.addEventListener('click', ()=>{
+    if(listening){ recognizer.stop(); return; }
+    input.value='';
+    try{ recognizer.start(); }catch(err){ voiceHint.textContent='마이크를 시작할 수 없어요'; }
+  });
+}
+
+init();
+</script>
+</body>
+</html>
